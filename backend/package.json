@@ -1,0 +1,20 @@
+{
+  "name": "pulumi_over_http",
+  "version": "1.0.0",
+  "main": "./bin/index.js",
+  "repository": "https://github.com/hayato1226/dev-platform",
+  "author": "hayato1226",
+  "license": "MIT",
+  "dependencies": {
+    "@pulumi/aws": "^3.6.1",
+    "@pulumi/pulumi": "^2.12.0",
+    "@types/express": "^4.17.8",
+    "@types/node": "^14.11.7",
+    "express": "^4.17.1",
+    "yarn": "^1.22.10"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && node ./bin/index.js"
+  }
+}
