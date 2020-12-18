@@ -14,7 +14,14 @@ import TableCell from '@material-ui/core/TableCell';
 import TableHead from '@material-ui/core/TableHead';
 import TableRow from '@material-ui/core/TableRow';
 import DeleteIcon from '@material-ui/icons/Delete';
-import { Button, Grid, Typography } from '@material-ui/core';
+import { Button, Grid, Icon, Typography } from '@material-ui/core';
+import TextField from '@material-ui/core/TextField';
+import Dialog from '@material-ui/core/Dialog';
+import DialogActions from '@material-ui/core/DialogActions';
+import DialogContent from '@material-ui/core/DialogContent';
+import DialogContentText from '@material-ui/core/DialogContentText';
+import DialogTitle from '@material-ui/core/DialogTitle';
+
 
 const BACKEND_EP  = process.env.BACKEND_EP || 'http://localhost:3001';
 
@@ -39,9 +46,12 @@ const App = ({classes}) => {
     const [devenvs, setEnvs] = useState([])
     const [instances, setInstances] = useState([])
     const [envId, setEnvId] = useState("")
+    const [open, setOpen] = useState(false);
+    const [deviceNum, setDeviceNum] = useState("")
+    const [envName, setEnvName] = useState("")
 
     const getDevEnv = async (id) => {
-        const url = `${BACKEND_EP}/devenv/${id}`
+        const url = `${BACKEND_EP}/stack/${id}`
         console.log(`GET: ${url}`)
         await axios
         .get(url)
@@ -65,10 +75,10 @@ const App = ({classes}) => {
     const addButtonHander = async (event) => {
         instances.servers && console.log(instances.servers.length);
         const num = instances.servers.length + 1
-        const url = `${BACKEND_EP}/devenv/${envId}`
+        const url = `${BACKEND_EP}/stack/${envId}`
         console.log(`PUT: ${url}`)
         
-        await axios.put(url , {id: "test",  number: num}, {
+        await axios.put(url , {id: envId,  number: num}, {
             headers: {
                 "Content-Type": "application/json",
             }
@@ -78,6 +88,42 @@ const App = ({classes}) => {
         await getDevEnv(envId)
     }
 
+    const createEnvButtonHander = async (event) => {
+        const url = `${BACKEND_EP}/stack/`
+        console.log(`POST: ${url}`)
+        console.log(`deviceNum: ${deviceNum}`)
+        await axios.post(url , {id: envName,  number: deviceNum}, {
+            headers: {
+                "Content-Type": "application/json",
+            }
+        }).then(response => {
+            console.log(`create success`)
+        })
+        axios
+            .get(`${BACKEND_EP}/stack`)
+            .then(response => {
+            setEnvs(response.data.ids)
+            })
+        setOpen(false);
+    }
+
+    const handleClose = () => {
+        setOpen(false);
+    };
+    const handleClickOpen = () => {
+        setOpen(true);
+    };
+
+    const deviceNumChangeHandler = async (event) => {
+        const deviceNum = event.target.value
+        setDeviceNum(deviceNum)
+    }
+    
+    const envNameChangeHandler = async (event) => {
+        const envName = event.target.value
+        setEnvName(envName)
+    }
+    
     const Instances = (props) => {
         return (
             <div className={classes.innercontent}>
@@ -109,7 +155,7 @@ const App = ({classes}) => {
     useEffect(() => {
         console.log('effect')
         axios
-            .get('http://localhost:3001/devenv')
+            .get(`${BACKEND_EP}/stack`)
             .then(response => {
             setEnvs(response.data.ids)
             })
@@ -128,18 +174,24 @@ const App = ({classes}) => {
             </div>
             <div className={classes.content}>
                 <Paper>
+
                     <div className={classes.innercontent}>
-                        <Grid container>
-                            <h3>Instance List</h3>
+                    <h2>Develop Environment</h2>
+                    <InputLabel id="label">select environment</InputLabel>
+                    <Grid container >
+                        <Grid item xs={4}>
+                            <Select labelId="label" id="select" value={envId} onChange={changeEnvSelectHandler} fullWidth>
+                            {devenvs.map(id => 
+                                <MenuItem key={id} value={id}>{id}</MenuItem>)
+                            }
+                            </Select>
                         </Grid>
-                        <InputLabel id="label">select environment</InputLabel>
-                        <Select labelId="label" id="select" value={envId} onChange={changeEnvSelectHandler}>
-                        {devenvs.map(id => 
-                            <MenuItem key={id} value={id}>{id}</MenuItem>)
-                        }
-                        </Select>
-                    </div>
-                    <div className={classes.innercontent}>
+                        <Grid item xs={1}>
+                            <Icon color="primary" onClick={handleClickOpen}>add_circle</Icon>
+                        </Grid>
+
+                    </Grid>
+                    <h3>Instance List</h3>
                         <div>
                             <Grid container justify="flex-end">
                                 <Grid item>
@@ -157,6 +209,46 @@ const App = ({classes}) => {
                         <Instances instances={instances}/>
                     </div>
                 </Paper>
+            </div>
+            <div>
+            <Dialog open={open} onClose={handleClose} aria-labelledby="form-dialog-title">
+        <DialogTitle id="form-dialog-title">Create New Environment</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            新しい環境の作成します。任意の環境名と、必要な端末数を入力してください。
+          </DialogContentText>
+          <Grid container >
+            <Grid item xs={5}>
+                <TextField
+                    autoFocus
+                    id="stackName"
+                    label="環境名"
+                    fullWidth
+                    onChange={envNameChangeHandler}
+                />
+            </Grid>
+            <Grid item xs={1}></Grid>
+            <Grid item xs={4} >
+                <TextField
+                    id="deviceNum"
+                    label="端末数"
+                    type="number"
+                    fullWidth
+                    onChange={deviceNumChangeHandler}
+                />
+              </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClose} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={createEnvButtonHander} color="primary">
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+
             </div>
         </div>
     )

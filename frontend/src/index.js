@@ -6,6 +6,8 @@ import App from './App';
 
 ReactDOM.render(
     <BrowserRouter>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+
         <App/>
     </BrowserRouter>,
     document.getElementById('root'));

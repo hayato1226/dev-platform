@@ -1,72 +1,85 @@
 import {LocalWorkspace, ConcurrentUpdateError, StackAlreadyExistsError, StackNotFoundError} from "@pulumi/pulumi/x/automation";
 import * as aws from "@pulumi/aws";
+import * as awsx from "@pulumi/awsx";
+
 import * as express from "express";
 
-const projectName = "dev_platform";
+const projectName = "devpf";
 
 /**
- * @description Programm body of deploy development environment (Deploy android VMs).
+ * @description Programm body of deploy development environment (Android VMs stack).
  * @param num Number of Instance
  */
 const pulumiProgram = (num : number) => async () => {
     const size = "t3.small";
-    // デプロイ対象（genymotion）のAMIのID
+    // genymotion's AMI ID
     const amiId = "ami-0f2164a9ad44d0a80";
 
-    // Requirements from https://docs.genymotion.com/paas/7.0/01_Requirements.html
-    const group = new aws.ec2.SecurityGroup("genymotion-secgrp", {
-        ingress: [
+    // Only public subnet(traffic is routed to an Internet Gateway)
+    const vpc = new awsx.ec2.Vpc(projectName, {
+        numberOfAvailabilityZones: 2, // 1 is only for test
+        subnets: [
             {
-                protocol: "tcp",
-                fromPort: 22,
-                toPort: 22,
-                cidrBlocks: ["0.0.0.0/0"]
-            },
-            {
-                protocol: "tcp",
-                fromPort: 80,
-                toPort: 80,
-                cidrBlocks: ["0.0.0.0/0"]
-            },
-            {
-                protocol: "tcp",
-                fromPort: 443,
-                toPort: 443,
-                cidrBlocks: ["0.0.0.0/0"]
-            },
-            {
-                protocol: "tcp",
-                fromPort: 51000,
-                toPort: 51100,
-                cidrBlocks: ["0.0.0.0/0"]
-            }, {
-                protocol: "udp",
-                fromPort: 51000,
-                toPort: 51100,
-                cidrBlocks: ["0.0.0.0/0"]
-            }, {
-                protocol: "udp",
-                fromPort: 5555,
-                toPort: 5555,
-                cidrBlocks: ["0.0.0.0/0"]
-            },
-        ],
-        egress: [
-            {
-                protocol: "-1",
-                fromPort: 0,
-                toPort: 0,
-                cidrBlocks: ["0.0.0.0/0"]
+                type: "public"
             }
         ]
     });
+
+    // Sevurity Group for Web Server
+    const publicSg = new awsx.ec2.SecurityGroup(`android-${projectName}`, {vpc});
+
+    // Rules: Requirements from https://docs.genymotion.com/paas/7.0/01_Requirements.html
+    // inbound SSH traffic on port 22 from anywhere
+    publicSg.createIngressRule("ssh-access-genymotion", {
+        location: new awsx.ec2.AnyIPv4Location(),
+        ports: new awsx.ec2.TcpPorts(22),
+        description: "allow SSH access from anywhere"
+    });
+
+    // inbound HTTP traffic on port 80 from anywhere
+    publicSg.createIngressRule("http-access-genymotion-ui", {
+        location: new awsx.ec2.AnyIPv4Location(),
+        ports: new awsx.ec2.TcpPorts(80),
+        description: "allow HTTP access from anywhere"
+    });
+    // inbound HTTPS traffic on port 443 from anywhere
+    publicSg.createIngressRule("https-access-genymotion-ui", {
+        location: new awsx.ec2.AnyIPv4Location(),
+        ports: new awsx.ec2.TcpPorts(443),
+        description: "allow HTTPS access from anywhere"
+    });
+
+    // inbound TCP traffic on port 51000-51100 from anywhere
+    publicSg.createIngressRule("webrtc-tcp-access-genymotion-ui", {
+        location: new awsx.ec2.AnyIPv4Location(),
+        ports: new awsx.ec2.TcpPorts(51000,51100),
+        description: "allow TCP 51000-51100 access from anywhere"
+    });
+
+    // inbound UDP traffic on port 51000-51100 from anywhere
+    publicSg.createIngressRule("webrtc-udp-https-access-genymotion-ui", {
+        location: new awsx.ec2.AnyIPv4Location(),
+        ports: new awsx.ec2.UdpPorts(51000,51100),
+        description: "allow UDP 51000-51100 access from anywhere"
+    });
+
+    // outbound TCP traffic on any port to anywhere
+    publicSg.createEgressRule("outbound-access", {
+        location: new awsx.ec2.AnyIPv4Location(),
+        ports: new awsx.ec2.AllTcpPorts(),
+        description: "allow outbound access to anywhere"
+    });
+
+    const publicSubnetIds = await vpc.publicSubnetIds;
 
     let servers = [];
     [...Array(num)].map(async (n, idx) => {
         const server = await new aws.ec2.Instance(`android-${idx}`, {
             instanceType: size,
-            vpcSecurityGroupIds: [group.id],
-            ami: amiId
+            vpcSecurityGroupIds: [publicSg.id],
+            ami: amiId,
+            associatePublicIpAddress: true,
+            subnetId: publicSubnetIds[0],
         });
         servers.push({publicIp: server.publicIp, publicHostName: server.publicDns, instanceId: server.id});
     });
@@ -74,7 +87,7 @@ const pulumiProgram = (num : number) => async () => {
     return {servers: servers}
 };
 
-// creates new envs
+// creates new stack
 const createHandler: express.RequestHandler = async (req, res) => {
     const stackName = req.body.id;
     const num = req.body.number as number;
@@ -97,7 +110,7 @@ const createHandler: express.RequestHandler = async (req, res) => {
         }
     }
 };
-// lists all envs
+// lists all stacks
 const listHandler: express.RequestHandler = async (req, res) => {
     try { // set up a workspace with only enough information for the list stack operations
         const ws = await LocalWorkspace.create({
@@ -114,7 +127,7 @@ const listHandler: express.RequestHandler = async (req, res) => {
         res.status(500).send(e);
     }
 };
-// gets info about a specific env
+// get info about a specific stack
 const getHandler: express.RequestHandler = async (req, res) => {
     const stackName = req.params.id;
     try { // select the existing stack
@@ -133,7 +146,7 @@ const getHandler: express.RequestHandler = async (req, res) => {
         }
     }
 };
-// updates the number of machines existing env
+// updates the number of machines existing stack
 const updateHandler: express.RequestHandler = async (req, res) => {
     const stackName = req.params.id;
     const num = req.body.number as number;
@@ -158,7 +171,7 @@ const updateHandler: express.RequestHandler = async (req, res) => {
         }
     }
 };
-// deletes a env
+// delete stack
 const deleteHandler: express.RequestHandler = async (req, res) => {
     const stackName = req.params.id;
     try { // select the existing stack
@@ -199,12 +212,12 @@ app.use(function (req, res, next) {
     next();
 });
 
-// setup routes for our DevEnv resource
-app.post("/devenv", createHandler);
-app.get("/devenv", listHandler);
-app.get("/devenv/:id", getHandler);
-app.put("/devenv/:id", updateHandler);
-app.delete("/devenv/:id", deleteHandler);
+// setup routes
+app.post("/stack", createHandler);
+app.get("/stack", listHandler);
+app.get("/stack/:id", getHandler);
+app.put("/stack/:id", updateHandler);
+app.delete("/stack/:id", deleteHandler);
 
 // start server
 const PORT: string = process.env.PORT || '3001';
